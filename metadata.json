@@ -1,0 +1,6 @@
+{
+  "name": "Dr.weight Loss",
+  "description": "Personal AI-powered nutrition, calorie, macro, hydration, and weight-loss companion.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
