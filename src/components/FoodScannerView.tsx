@@ -339,9 +339,20 @@ export const FoodScannerView: React.FC<FoodScannerViewProps> = ({
       )}
 
       {error && (
-        <div className="flex items-start gap-2.5 rounded-xl border border-[#E5B8AD] bg-[#FDF4F2] px-4 py-3 text-sm text-[#9C3A22]">
-          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-          <span>{error}</span>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 rounded-xl border border-[#E5B8AD] bg-[#FDF4F2] px-4 py-3 text-sm text-[#9C3A22]">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>{error}</span>
+          </div>
+          {imageData && !reviewReady && !analyzing && (
+            <button
+              type="button"
+              onClick={handleAnalyze}
+              className="self-start sm:self-auto rounded-lg border border-[#D49A8E] bg-white px-3 py-1.5 text-xs font-semibold text-[#9C3A22] hover:bg-[#FDF0EC] whitespace-nowrap shrink-0"
+            >
+              Try Again
+            </button>
+          )}
         </div>
       )}
 

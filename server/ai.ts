@@ -1,10 +1,9 @@
-import { GoogleGenAI, Type } from '@google/genai';
-import type {
-  AssistantMessage,
-  FoodAnalysisResult,
-  MealEntry,
-  MealType,
-} from '../src/types.ts';
+import type { AssistantMessage, FoodAnalysisResult, MealEntry } from '../src/types.ts';
+import {
+  analyzeFoodImageWithGemini,
+  askNutritionAssistantWithContext,
+  GeminiServiceError,
+} from '../api/_lib/gemini.ts';
 import {
   getAnalyticsData,
   getMeals,
@@ -13,30 +12,7 @@ import {
   getWeightLogs,
 } from './db.ts';
 
-function getGeminiClient(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
-    throw new Error(
-      'GEMINI_API_KEY is not configured. Please add your Gemini API key in Settings > Secrets.'
-    );
-  }
-  return new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      },
-    },
-  });
-}
-
-function normalizeMealType(raw: string | undefined): MealType {
-  const value = (raw || '').toLowerCase();
-  if (value.includes('breakfast')) return 'Breakfast';
-  if (value.includes('snack')) return 'Evening Snacks';
-  if (value.includes('dinner')) return 'Dinner';
-  return 'Lunch';
-}
+export { GeminiServiceError };
 
 export async function analyzeFoodImage(params: {
   imageBase64: string;
@@ -44,138 +20,7 @@ export async function analyzeFoodImage(params: {
   extraContext?: string;
   isHomemade?: boolean;
 }): Promise<FoodAnalysisResult> {
-  const ai = getGeminiClient();
-
-  const cleanBase64 = params.imageBase64.replace(/^data:[^;]+;base64,/, '');
-  const mimeType = params.mimeType || 'image/jpeg';
-
-  const contextLines: string[] = [];
-  if (params.isHomemade) {
-    contextLines.push(
-      'The user indicated this is a HOMEMADE meal. Pay extra attention to realistic home cooking portions and estimate added cooking oil or ghee in teaspoons separately in estimatedOilTsp (note: keep item fat macros consistent with ingredients + cooking oil, and explain clearly in confidenceNotes how much oil/ghee was assumed).'
-    );
-  }
-  if (params.extraContext?.trim()) {
-    contextLines.push(`User context / description: "${params.extraContext.trim()}"`);
-  }
-
-  const prompt = `Analyze this food photograph carefully as an expert clinical nutritionist specializing in Indian home cooking as well as global cuisines.
-
-Identify every visible food item on the plate/bowl/thali (including Indian staples like roti, phulka, chapati, paratha, dal, sambar, rasam, sabzi, paneer dishes, rice, biryani, pulao, puri, dosa, idli, poha, upma, khichdi, curd/raita, chutney, salad, chai, snacks, as well as international meals).
-
-For each individual food item, estimate:
-- name (clear, specific dish name)
-- quantity (numeric count or portions, e.g., 2 for 2 rotis, 1 for 1 katori)
-- unit (e.g., "piece", "katori (150g)", "cup", "tbsp", "plate")
-- calories (kcal for that total item quantity)
-- protein (grams)
-- carbs (grams)
-- fat (grams)
-- ingredients (array of key ingredients)
-
-Also provide:
-- foodName: concise overall meal title
-- suggestedMealType: one of "Breakfast", "Lunch", "Evening Snacks", "Dinner"
-- servingSize: concise total meal serving description
-- estimatedOilTsp: estimated cooking oil or ghee used across the dish in teaspoons (e.g. 1.5). If negligible or raw/steamed, 0 or 0.5.
-- confidenceNotes: brief practical note explaining portion assumptions and oil/ghee estimate so the user can review and adjust before saving.
-
-${contextLines.join('\n')}`;
-
-  const response = await ai.models.generateContent({
-    model: 'gemini-4-hydrogen',
-    contents: {
-      parts: [
-        {
-          inlineData: {
-            mimeType,
-            data: cleanBase64,
-          },
-        },
-        { text: prompt },
-      ],
-    },
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          foodName: { type: Type.STRING },
-          suggestedMealType: { type: Type.STRING },
-          servingSize: { type: Type.STRING },
-          estimatedOilTsp: { type: Type.NUMBER },
-          confidenceNotes: { type: Type.STRING },
-          items: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                quantity: { type: Type.NUMBER },
-                unit: { type: Type.STRING },
-                calories: { type: Type.NUMBER },
-                protein: { type: Type.NUMBER },
-                carbs: { type: Type.NUMBER },
-                fat: { type: Type.NUMBER },
-                ingredients: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING },
-                },
-              },
-              required: [
-                'name',
-                'quantity',
-                'unit',
-                'calories',
-                'protein',
-                'carbs',
-                'fat',
-                'ingredients',
-              ],
-            },
-          },
-        },
-        required: [
-          'foodName',
-          'suggestedMealType',
-          'servingSize',
-          'estimatedOilTsp',
-          'confidenceNotes',
-          'items',
-        ],
-      },
-    },
-  });
-
-  const text = (response.text ?? '{}').trim();
-  const parsed = JSON.parse(text) as Partial<FoodAnalysisResult>;
-
-  const items = Array.isArray(parsed.items)
-    ? parsed.items.map((item) => ({
-        name: String(item.name || 'Food item'),
-        quantity: Number(item.quantity) > 0 ? Number(item.quantity) : 1,
-        unit: String(item.unit || 'serving'),
-        calories: Math.max(0, Math.round(Number(item.calories) || 0)),
-        protein: Math.max(0, Number((Number(item.protein) || 0).toFixed(1))),
-        carbs: Math.max(0, Number((Number(item.carbs) || 0).toFixed(1))),
-        fat: Math.max(0, Number((Number(item.fat) || 0).toFixed(1))),
-        ingredients: Array.isArray(item.ingredients)
-          ? item.ingredients.map((ing) => String(ing))
-          : [],
-      }))
-    : [];
-
-  return {
-    foodName: String(parsed.foodName || 'Scanned Meal'),
-    suggestedMealType: normalizeMealType(parsed.suggestedMealType),
-    servingSize: String(parsed.servingSize || '1 meal'),
-    estimatedOilTsp: Math.max(0, Number((Number(parsed.estimatedOilTsp) || 0).toFixed(1))),
-    confidenceNotes: String(
-      parsed.confidenceNotes ||
-        'Please review the detected items, portion sizes, and cooking oil before saving.'
-    ),
-    items,
-  };
+  return analyzeFoodImageWithGemini(params);
 }
 
 function buildNutritionContext(todayIso: string): string {
@@ -195,7 +40,6 @@ function buildNutritionContext(todayIso: string): string {
     { calories: 0, protein: 0, carbs: 0, fat: 0 }
   );
 
-  // Build 14-day window ending todayIso
   const endObj = new Date(`${todayIso}T00:00:00Z`);
   const startObj = new Date(endObj);
   startObj.setUTCDate(startObj.getUTCDate() - 13);
@@ -276,39 +120,10 @@ export async function askNutritionAssistant(params: {
   todayIso: string;
   history: AssistantMessage[];
 }): Promise<string> {
-  const ai = getGeminiClient();
   const context = buildNutritionContext(params.todayIso);
-
-  const recentChat = params.history
-    .slice(-8)
-    .map((m) => `${m.role === 'user' ? 'User' : 'Coach'}: ${m.content}`)
-    .join('\n\n');
-
-  const systemInstruction = `You are the personal nutrition coach inside "Dr.weight Loss", a private single-user nutrition and weight-loss companion.
-
-Strict guidelines:
-1. Always ground every number in the user's ACTUAL stored nutrition records provided below. Never invent logged meals, calories, weights, or water intake.
-2. If the user has not logged meals or weight for a timeframe, state that honestly and clearly, and offer helpful next steps.
-3. Provide practical, sustainable, evidence-based guidance (including Indian home-cooked options like dal, paneer, curd, sprouts, eggs, roti, sabzi, grilled meats/tofu when suggesting meals or protein boosts).
-4. NEVER recommend extreme calorie restriction, starvation, or unsafe weight-loss practices. Emphasize balanced nutrition, adequate protein, hydration, and steady progress.
-5. Keep responses concise, structured with clean bullet points or bold key numbers, and directly answer the user's question.`;
-
-  const prompt = `${context}
-
-${recentChat ? `RECENT CONVERSATION:\n${recentChat}\n\n` : ''}USER QUESTION:
-${params.question}`;
-
-  const response = await ai.models.generateContent({
-    model: 'gemini-4-hydrogen',
-    contents: prompt,
-    config: {
-      systemInstruction,
-    },
+  return askNutritionAssistantWithContext({
+    question: params.question,
+    context,
+    history: params.history,
   });
-
-  const reply = (response.text ?? '').trim();
-  if (!reply) {
-    throw new Error('The AI assistant returned an empty response. Please try again.');
-  }
-  return reply;
 }

@@ -25,7 +25,7 @@ import {
   updateSettings,
   updateWeightLog,
 } from './server/db.ts';
-import { analyzeFoodImage, askNutritionAssistant } from './server/ai.ts';
+import { analyzeFoodImage, askNutritionAssistant, GeminiServiceError } from './server/ai.ts';
 import { MEAL_TYPES, type MealType } from './src/types.ts';
 
 function isValidIsoDate(val: unknown): val is string {
@@ -45,7 +45,7 @@ async function startServer() {
   app.use(express.json({ limit: '15mb' }));
 
   app.get('/api/health', (_req, res) => {
-    res.json({ ok: true });
+    res.json({ ok: true, mode: 'express-sqlite' });
   });
 
   // Settings
@@ -239,6 +239,9 @@ async function startServer() {
       });
       res.json(result);
     } catch (err) {
+      if (err instanceof GeminiServiceError) {
+        return res.status(err.statusCode).json({ error: err.message });
+      }
       const message = (err as Error).message || 'Failed to analyze food photograph.';
       const status = message.includes('GEMINI_API_KEY') ? 503 : 500;
       res.status(status).json({ error: message });
@@ -272,6 +275,9 @@ async function startServer() {
 
       res.json({ userMessage: userMsg, assistantMessage: assistantMsg });
     } catch (err) {
+      if (err instanceof GeminiServiceError) {
+        return res.status(err.statusCode).json({ error: err.message });
+      }
       const message = (err as Error).message || 'Failed to get response from Nutrition Assistant.';
       const status = message.includes('GEMINI_API_KEY') ? 503 : 500;
       res.status(status).json({ error: message });

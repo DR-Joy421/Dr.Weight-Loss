@@ -82,6 +82,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setStatusMsg('Suggested balanced targets filled in. Click "Save Settings" to apply.');
   };
 
+  const handleExportJson = async () => {
+    try {
+      const payload = await api.exportBackup();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: 'application/json;charset=utf-8;',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `dr-weight-loss-backup-${getTodayIso()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setErrorMsg((err as Error).message);
+    }
+  };
+
   const handleExportCsv = async () => {
     try {
       const meals = await api.getMeals();
@@ -329,14 +346,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <a
-            href="/api/export"
-            download={`dr-weight-loss-backup-${getTodayIso()}.json`}
+          <button
+            type="button"
+            onClick={handleExportJson}
             className="min-h-[44px] inline-flex items-center gap-2 rounded-xl border border-[#DCE5DE] bg-[#F8FAF8] px-4 py-2 text-sm font-medium text-[#142018] hover:bg-[#EDF6F0] hover:border-[#2D6A4F]"
           >
             <Download className="h-4 w-4 text-[#2D6A4F]" />
             Download Full Backup (JSON)
-          </a>
+          </button>
 
           <button
             type="button"
