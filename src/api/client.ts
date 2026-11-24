@@ -39,6 +39,14 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     }
     throw new Error(`Request failed (${res.status})`);
   }
+  if (data === null || data === undefined) {
+    if (text.trim().startsWith('<')) {
+      throw new Error(
+        'The server returned an HTML page instead of JSON for this API request. Make sure the /api backend endpoints are deployed and active.'
+      );
+    }
+    throw new Error('The server returned an empty or invalid response. Please try again.');
+  }
   return data as T;
 }
 

@@ -177,17 +177,27 @@ export const FoodScannerView: React.FC<FoodScannerViewProps> = ({
         isHomemade,
       });
 
-      setFoodName(result.foodName);
-      setMealType(result.suggestedMealType);
-      setServingSize(result.servingSize);
+      if (!result || typeof result !== 'object' || !Array.isArray(result.items)) {
+        throw new Error('Received an unexpected response while analyzing the meal. Please try again.');
+      }
+
+      setFoodName(result.foodName || 'Scanned Meal');
+      setMealType(result.suggestedMealType || 'Lunch');
+      setServingSize(result.servingSize || '1 serving');
       setQuantity(1);
-      setBaseOilTsp(result.estimatedOilTsp);
-      setOilTsp(result.estimatedOilTsp);
+      setBaseOilTsp(Number(result.estimatedOilTsp) || 0);
+      setOilTsp(Number(result.estimatedOilTsp) || 0);
       setItems(result.items);
-      setConfidenceNotes(result.confidenceNotes);
+      setConfidenceNotes(
+        result.confidenceNotes || 'Please review the detected items and quantities before saving.'
+      );
       setDate(getTodayIso());
       setTime(getCurrentTimeHHMM());
-      recalculateFromItemsAndOil(result.items, result.estimatedOilTsp, result.estimatedOilTsp);
+      recalculateFromItemsAndOil(
+        result.items,
+        Number(result.estimatedOilTsp) || 0,
+        Number(result.estimatedOilTsp) || 0
+      );
       setReviewReady(true);
     } catch (err) {
       setError((err as Error).message || 'AI food analysis failed.');

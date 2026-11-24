@@ -265,7 +265,10 @@ ${contextLines.join('\n')}`;
   );
 
   const text = (response.text ?? '{}').trim();
-  const parsed = JSON.parse(text) as Partial<FoodAnalysisResult>;
+  const rawParsed = JSON.parse(text || '{}') as unknown;
+  const parsed = (
+    rawParsed && typeof rawParsed === 'object' ? rawParsed : {}
+  ) as Partial<FoodAnalysisResult>;
 
   const items = Array.isArray(parsed.items)
     ? parsed.items.map((item) => ({
